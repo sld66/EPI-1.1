@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion des EPI - Application Terrain</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap');
+        
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #f8f9fa;
+        }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #e63946 0%, #f4a261 100%);
+        }
+        
+        .pulse-animation {
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        .floating-btn {
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        
+        .barcode-scanner {
+            border: 3px dashed #e63946;
+        }
+        
+        .epi-item {
+            transition: all 0.3s ease;
+        }
+        
+        .epi-item:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 15px rgba(0,0,0,0.1);
+        }
+        
+        .notification {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 1000;
+            max-width: 24rem;
+            transition: all 0.3s ease;
+        }
+        
+        .slide-in {
+            transform: translateX(0);
+        }
+        
+        .slide-out {
+            transform: translateX(150%);
+        }
+    </style>
+</head>
+<body>
+    <div class="min-h-screen flex flex-col">
+        <!-- Notification -->
+        <div id="notification" class="notification hidden">
+            <div class="bg-white shadow-lg rounded-lg overflow-hidden">
+                <div class="flex items-center px-4 py-3">
+                    <div id="notificationIcon" class="flex-shrink-0">
+                        <i class="fas fa-info-circle text-xl"></i>
+                    </div>
+                    <div class="ml-3">
+                        <p id="notificationMessage" class="text-sm font-medium"></p>
+                    </div>
+                    <button onclick="hideNotification()" class="ml-auto text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div id="notificationProgress" class="h-1 bg-gray-200"></div>
+            </div>
+        </div>
+
+        <!-- Header -->
+        <header class="gradient-bg text-white shadow-lg">
+            <div class="container mx-auto px-4 py-6">
+                <div class="flex justify-between items-center">
+                    <div class="flex items-center space-x-3">
+                        <i class="fas fa-hard-hat text-3xl"></i>
+                        <h1 class="text-2xl font-bold">Gestion des EPI</h1>
+                    </div>
+                    <div class="flex items-center space-x-4">
+                        <button id="sendEmailBtn" class="bg-yellow-400 hover:bg-yellow-500 text-red-800 font-semibold px-4 py-2 rounded-lg transition flex items-center space-x-2">
+                            <i class="fas fa-paper-plane"></i>
+                            <span>Envoyer le récapitulatif</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="flex-grow container mx-auto px-4 py-8">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Scanner Section -->
+                <div class="lg:col-span-1 bg-white rounded-xl shadow-lg p-6">
+                    <h2 class="text-xl font-semibold text-red-700 mb-4 flex items-center">
+                        <i class="fas fa-barcode mr-2"></i> Scanner un EPI
+                    </h2>
+                    
+                    <div class="barcode-scanner rounded-lg p-4 mb-6 flex flex-col items-center justify-center" style="min-height: 200px;">
+                        <div id="scannerPlaceholder" class="text-center">
+                            <i class="fas fa-camera text-4xl text-gray-400 mb-3"></i>
+                            <p class="text-gray-500">Prêt à scanner</p>
+                        </div>
+                        <video id="scannerVideo" class="w-full h-auto hidden"></video>
+                        <canvas id="scannerCanvas" class="hidden"></canvas>
+                    </div>
+                    
+                    <div class="flex justify-center">
+                        <button id="startScannerBtn" class="bg-red-600 hover:bg-red-700 text-white font-semibold px-6 py-3 rounded-lg transition flex items-center space-x-2 pulse-animation">
+                            <i class="fas fa-qrcode"></i>
+                            <span>Activer le scanner</span>
+                        </button>
+                    </div>
+                    
+                    <div class="mt-6">
+                        <h3 class="font-medium text-gray-700 mb-2">Ou saisir manuellement :</h3>
+                        <div class="flex space-x-2">
+                            <input type="text" id="manualBarcodeInput" placeholder="Code EPI" class="flex-grow border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500">
+                            <button id="addManualBtn" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold px-4 py-2 rounded-lg transition">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- EPI List Section -->
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <h2 class="text-xl font-semibold text-red-700 mb-6 flex items-center">
+                            <i class="fas fa-list-check mr-2"></i> Liste des EPI scannés
+                            <span id="epiCount" class="ml-auto bg-red-100 text-red-800 px-3 py-1 rounded-full text-sm font-medium">0</span>
+                        </h2>
+                        
+                        <div id="epiList" class="space-y-4">
+                            <!-- EPI items will be added here dynamically -->
+                            <div class="text-center py-10 text-gray-400" id="emptyListMessage">
+                                <i class="fas fa-box-open text-4xl mb-3"></i>
+                                <p>Aucun EPI scanné pour le moment</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Floating Add Button -->
+        <div class="fixed bottom-8 right-8">
+            <button id="addRecipientBtn" class="floating-btn bg-yellow-500 hover:bg-yellow-600 text-white rounded-full w-16 h-16 flex items-center justify-center text-2xl transition transform hover:rotate-90">
+                <i class="fas fa-user-plus"></i>
+            </button>
+        </div>
+
+        <!-- Add Recipient Modal -->
+        <div id="recipientModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+            <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-red-700">Ajouter un destinataire</h3>
+                    <button id="closeModalBtn" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label for="recipientName" class="block text-sm font-medium text-gray-700 mb-1">Nom complet</label>
+                        <input type="text" id="recipientName" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500">
+                    </div>
+                    
+                    <div>
+                        <label for="recipientService" class="block text-sm font-medium text-gray-700 mb-1">Service</label>
+                        <input type="text" id="recipientService" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500">
+                    </div>
+                    
+                    <div>
+                        <label for="recipientEmail" class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                        <input type="email" id="recipientEmail" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500">
+                    </div>
+                    
+                    <div class="pt-2">
+                        <button id="saveRecipientBtn" class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition">
+                            Enregistrer
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Email Modal -->
+        <div id="emailModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+            <div class="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold text-red-700">Envoyer le récapitulatif</h3>
+                    <button id="closeEmailModalBtn" class="text-gray-500 hover:text-gray-700">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                
+                <div class="space-y-4">
+                    <div>
+                        <label for="adminEmail" class="block text-sm font-medium text-gray-700 mb-1">Votre email</label>
+                        <input type="email" id="adminEmail" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500" placeholder="email@entreprise.com">
+                    </div>
+                    
+                    <div>
+                        <label for="emailSubject" class="block text-sm font-medium text-gray-700 mb-1">Sujet</label>
+                        <input type="text" id="emailSubject" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500" value="Récapitulatif des EPI distribués">
+                    </div>
+                    
+                    <div>
+                        <label for="emailMessage" class="block text-sm font-medium text-gray-700 mb-1">Message</label>
+                        <textarea id="emailMessage" rows="4" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-red-500">Veuillez trouver ci-joint le récapitulatif des EPI distribués avec leurs destinataires respectifs.</textarea>
+                    </div>
+                    
+                    <div class="pt-2">
+                        <button id="confirmSendEmailBtn" class="w-full bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg transition flex items-center justify-center space-x-2">
+                            <i class="fas fa-paper-plane"></i>
+                            <span>Envoyer l'email</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let epiList = [];
+        let currentScanner = null;
+        let currentRecipient = null;
+        let notificationTimeout;
+        
+        // DOM Elements
+        const startScannerBtn = document.getElementById('startScannerBtn');
+        const scannerVideo = document.getElementById('scannerVideo');
+        const scannerCanvas = document.getElementById('scannerCanvas');
+        const scannerPlaceholder = document.getElementById('scannerPlaceholder');
+        const manualBarcodeInput = document.getElementById('manualBarcodeInput');
+        const addManualBtn = document.getElementById('addManualBtn');
+        const epiListContainer = document.getElementById('epiList');
+        const emptyListMessage = document.getElementById('emptyListMessage');
+        const epiCount = document.getElementById('epiCount');
+        const addRecipientBtn = document.getElementById('addRecipientBtn');
+        const recipientModal = document.getElementById('recipientModal');
+        const closeModalBtn = document.getElementById('closeModalBtn');
+        const saveRecipientBtn = document.getElementById('saveRecipientBtn');
+        const sendEmailBtn = document.getElementById('sendEmailBtn');
+        const emailModal = document.getElementById('emailModal');
+        const closeEmailModalBtn = document.getElementById('closeEmailModalBtn');
+        const confirmSendEmailBtn = document.getElementById('confirmSendEmailBtn');
+        const notification = document.getElementById('notification');
+        const notificationIcon = document.getElementById('notificationIcon');
+        const notificationMessage = document.getElementById('notificationMessage');
+        const notificationProgress = document.getElementById('notificationProgress');
+        
+        // Event Listeners
+        startScannerBtn.addEventListener('click', toggleScanner);
+        addManualBtn.addEventListener('click', addManualEPI);
+        manualBarcodeInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') addManualEPI();
+        });
+        addRecipientBtn.addEventListener('click', () => recipientModal.classList.remove('hidden'));
+        closeModalBtn.addEventListener('click', () => recipientModal.classList.add('hidden'));
+        saveRecipientBtn.addEventListener('click', saveRecipient);
+        sendEmailBtn.addEventListener('click', () => emailModal.classList.remove('hidden'));
+        closeEmailModalBtn.addEventListener('click', () => emailModal.classList.add('hidden'));
+        confirmSendEmailBtn.addEventListener('click', sendEmail);
+        
+        // Initialize with some sample data for demonstration
+        function initializeSampleData() {
+            if (localStorage.getItem('epiList')) {
+                epiList = JSON.parse(localStorage.getItem('epiList'));
+                updateEPIList();
+            } else {
+                // Add some sample EPIs for demo
+                epiList = [
+                    {
+                        id: 1,
+                        barcode: 'EPI12345678',
+                        name: 'Casque de sécurité',
+                        type: 'Protection tête',
+                        recipient: { name: 'Jean Dupont', service: 'Chantier A', email: 'jean.dupont@entreprise.com' },
+                        date: new Date().toISOString()
+                    },
+                    {
+                        id: 2,
+                        barcode: 'EPI87654321',
+                        name: 'Gants anti-coupure',
+                        type: 'Protection mains',
+                        recipient: null,
+                        date: new Date().toISOString()
+                    }
+                ];
+                updateEPIList();
+            }
+        }
+        
+        // Functions
+        function toggleScanner() {
+            if (currentScanner) {
+                // Stop scanner
+                clearInterval(currentScanner);
+                currentScanner = null;
+                const stream = scannerVideo.srcObject;
+                if (stream) {
+                    const tracks = stream.getTracks();
+                    tracks.forEach(track => track.stop());
+                }
+                scannerVideo.srcObject = null;
+                scannerVideo.classList.add('hidden');
+                scannerPlaceholder.classList.remove('hidden');
+                startScannerBtn.innerHTML = '<i class="fas fa-qrcode"></i><span>Activer le scanner</span>';
+                startScannerBtn.classList.add('pulse-animation');
+                startScannerBtn.classList.remove('bg-red-700');
+                startScannerBtn.classList.add('bg-red-600');
+            } else {
+                // Start scanner
+                startScannerBtn.innerHTML = '<i class="fas fa-stop"></i><span>Arrêter le scanner</span>';
+                startScannerBtn.classList.remove('pulse-animation');
+                startScannerBtn.classList.remove('bg-red-600');
+                startScannerBtn.classList.add('bg-red-700');
+                
+                scannerPlaceholder.classList.add('hidden');
+                scannerVideo.classList.remove('hidden');
+                
+                // Initialize scanner
+                if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                    navigator.mediaDevices.getUserMedia({ 
+                        video: { 
+                            facingMode: 'environment',
+                            width: { ideal: 1280 },
+                            height: { ideal: 720 }
+                        } 
+                    }).then(function(stream) {
+                        scannerVideo.srcObject = stream;
+                        scannerVideo.play();
+                        
+                        currentScanner = setInterval(() => {
+                            try {
+                                if (scannerVideo.readyState === scannerVideo.HAVE_ENOUGH_DATA) {
+                                    scannerCanvas.width = scannerVideo.videoWidth;
+                                    scannerCanvas.height = scannerVideo.videoHeight;
+                                    const context = scannerCanvas.getContext('2d');
+                                    context.drawImage(scannerVideo, 0, 0, scannerCanvas.width, scannerCanvas.height);
+                                    
+                                    // Try to decode barcode/QR code
+                                    const imageData = context.getImageData(0, 0, scannerCanvas.width, scannerCanvas.height);
+                                    const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                                        inversionAttempts: 'dontInvert',
+                                    });
+                                    
+                                    if (code) {
+                                        addEPI(code.data);
+                                    }
+                                }
+                            } catch (e) {
+                                console.error('Error scanning:', e);
+                            }
+                        }, 500);
+                    }).catch(function(err) {
+                        console.error("Error accessing camera:", err);
+                        showNotification("Impossible d'accéder à la caméra. Veuillez vérifier les permissions.", "error");
+                        scannerPlaceholder.classList.remove('hidden');
+                        scannerVideo.classList.add('hidden');
+                        startScannerBtn.innerHTML = '<i class="fas fa-qrcode"></i><span>Activer le scanner</span>';
+                        startScannerBtn.classList.add('pulse-animation');
+                        startScannerBtn.classList.remove('bg-red-700');
+                        startScannerBtn.classList.add('bg-red-600');
+                    });
+                } else {
+                    showNotification("Votre navigateur ne supporte pas l'accès à la caméra.", "error");
+                }
+            }
+        }
+        
+        function addManualEPI() {
+            const barcode = manualBarcodeInput.value.trim();
+            if (barcode) {
+                addEPI(barcode);
+                manualBarcodeInput.value = '';
+            } else {
+                showNotification("Veuillez saisir un code EPI valide", "warning");
+            }
+        }
+        
+        function addEPI(barcode) {
+            // Check if EPI already exists
+            const existingEPI = epiList.find(epi => epi.barcode === barcode);
+            if (existingEPI) {
+                showNotification("Cet EPI a déjà été scanné", "warning");
+                return;
+            }
+            
+            // Add new EPI
+            const newEPI = {
+                id: Date.now(),
+                barcode: barcode,
+                name: `EPI-${barcode.substring(0, 4)}`,
+                type: "Type inconnu",
+                recipient: null,
+                date: new Date().toISOString()
+            };
+            
+            epiList.push(newEPI);
+            saveToLocalStorage();
+            updateEPIList();
+            showNotification("EPI ajouté avec succès", "success");
+            
+            // Auto-stop scanner after successful scan
+            if (currentScanner) {
+                toggleScanner();
+            }
+        }
+        
+        function updateEPIList() {
+            if (epiList.length === 0) {
+                emptyListMessage.classList.remove('hidden');
+                epiListContainer.innerHTML = '';
+                epiCount.textContent = '0';
+                sendEmailBtn.classList.add('opacity-50');
+                sendEmailBtn.classList.add('cursor-not-allowed');
+                sendEmailBtn.disabled = true;
+                return;
+            }
+            
+            emptyListMessage.classList.add('hidden');
+            epiCount.textContent = epiList.length;
+            sendEmailBtn.classList.remove('opacity-50');
+            sendEmailBtn.classList.remove('cursor-not-allowed');
+            sendEmailBtn.disabled = false;
+            
+            epiListContainer.innerHTML = '';
+            
+            epiList.forEach(epi => {
+                const epiItem = document.createElement('div');
+                epiItem.className = 'epi-item bg-white border border-gray-200 rounded-lg p-4 flex items-center justify-between';
+                
+                epiItem.innerHTML = `
+                    <div class="flex items-center space-x-4">
+                        <div class="bg-red-100 text-red-800 p-3 rounded-lg">
+                            <i class="fas fa-hard-hat text-xl"></i>
+                        </div>
+                        <div>
+                            <h4 class="font-medium text-gray-800">${epi.name}</h4>
+                            <p class="text-sm text-gray-500">${epi.type} - ${epi.barcode}</p>
+                            ${epi.recipient ? `
+                                <div class="mt-1 text-sm">
+                                    <span class="text-gray-700">Destinataire: </span>
+                                    <span class="font-medium">${epi.recipient.name} (${epi.recipient.service})</span>
+                                </div>
+                            ` : `
+                                <div class="mt-1">
+                                    <span class="text-red-500 text-sm">Aucun destinataire</span>
+                                </div>
+                            `}
+                        </div>
+                    </div>
+                    <div class="flex space-x-2">
+                        ${!epi.recipient ? `
+                            <button class="assign-btn bg-yellow-500 hover:bg-yellow-600 text-white p-2 rounded-lg" data-id="${epi.id}">
+                                <i class="fas fa-user-plus"></i>
+                            </button>
+                        ` : ''}
+                        <button class="delete-btn bg-gray-200 hover:bg-gray-300 text-gray-800 p-2 rounded-lg" data-id="${epi.id}">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                
+                epiListContainer.appendChild(epiItem);
+            });
+            
+            // Add event listeners to new buttons
+            document.querySelectorAll('.assign-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const epiId = parseInt(this.getAttribute('data-id'));
+                    const epi = epiList.find(e => e.id === epiId);
+                    if (epi) {
+                        currentRecipient = epi;
+                        recipientModal.classList.remove('hidden');
+                    }
+                });
+            });
+            
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const epiId = parseInt(this.getAttribute('data-id'));
+                    epiList = epiList.filter(e => e.id !== epiId);
+                    saveToLocalStorage();
+                    updateEPIList();
+                    showNotification("EPI supprimé", "info");
+                });
+            });
+        }
+        
+        function saveRecipient() {
+            const name = document.getElementById('recipientName').value.trim();
+            const service = document.getElementById('recipientService').value.trim();
+            const email = document.getElementById('recipientEmail').value.trim();
+            
+            if (!name || !service) {
+                showNotification("Veuillez remplir au moins le nom et le service", "warning");
+                return;
+            }
+            
+            if (currentRecipient) {
+                currentRecipient.recipient = { name, service, email };
+                saveToLocalStorage();
+                updateEPIList();
+                showNotification("Destinataire enregistré", "success");
+                currentRecipient = null;
+                
+                // Reset form
+                document.getElementById('recipientName').value = '';
+                document.getElementById('recipientService').value = '';
+                document.getElementById('recipientEmail').value = '';
+                
+                recipientModal.classList.add('hidden');
+            }
+        }
+        
+        function sendEmail() {
+            const adminEmail = document.getElementById('adminEmail').value.trim();
+            const subject = document.getElementById('emailSubject').value.trim();
+            const message = document.getElementById('emailMessage').value.trim();
+            
+            if (!adminEmail) {
+                showNotification("Veuillez saisir votre email", "warning");
+                return;
+            }
+            
+            // Validate email format
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(adminEmail)) {
+                showNotification("Veuillez saisir un email valide", "warning");
+                return;
+            }
+            
+            // Create summary
+            const summary = epiList.map(epi => {
+                return `
+                    <tr>
+                        <td class="border px-4 py-2">${epi.name}</td>
+                        <td class="border px-4 py-2">${epi.type}</td>
+                        <td class="border px-4 py-2">${epi.barcode}</td>
+                        <td class="border px-4 py-2">${epi.recipient ? epi.recipient.name : 'Non attribué'}</td>
+                        <td class="border px-4 py-2">${epi.recipient ? epi.recipient.service : '-'}</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            const htmlContent = `
+                <html>
+                    <head>
+                        <style>
+                            body { font-family: Arial, sans-serif; }
+                            h1 { color: #e63946; }
+                            table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+                            th { background-color: #f4a261; color: white; text-align: left; }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>Récapitulatif des EPI distribués</h1>
+                        <p>${message}</p>
+                        
+                        <table border="1">
+                            <thead>
+                                <tr>
+                                    <th>Nom EPI</th>
+                                    <th>Type</th>
+                                    <th>Code-barres</th>
+                                    <th>Destinataire</th>
+                                    <th>Service</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${summary}
+                            </tbody>
+                        </table>
+                        
+                        <p style="margin-top: 30px; color: #666; font-size: 0.9em;">
+                            Envoyé via l'application de gestion des EPI - ${new Date().toLocaleDateString()}
+                        </p>
+                    </body>
+                </html>
